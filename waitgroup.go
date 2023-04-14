@@ -23,13 +23,13 @@ func (wg *SafeWaitGroup) Add(delta int) error {
 	if wg.wait && delta > 0 {
 		return fmt.Errorf("add with positive delta after Wait is forbidden")
 	}
-	wg.Add(delta)
+	wg.WaitGroup.Add(delta)
 	return nil
 }
 
 // Done decrements the WaitGroup counter.
 func (wg *SafeWaitGroup) Done() {
-	wg.Done()
+	wg.WaitGroup.Done()
 }
 
 // Wait blocks until the WaitGroup counter is zero.
@@ -37,5 +37,5 @@ func (wg *SafeWaitGroup) Wait() {
 	wg.mu.Lock()
 	wg.wait = true
 	wg.mu.Unlock()
-	wg.Wait()
+	wg.WaitGroup.Wait()
 }
