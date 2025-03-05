@@ -3,6 +3,7 @@ package gosyncutils
 import (
 	"reflect"
 	"sync"
+	"time"
 )
 
 type EventOpject[T any] struct {
@@ -33,7 +34,6 @@ func (mw *EventOpject[T]) Set(value T) {
 	mw.Lock()
 	defer mw.Unlock()
 	mw.Obj = value
-	return
 }
 
 func (mw *EventOpject[T]) SetThenSendSignal(value T) {
@@ -41,7 +41,6 @@ func (mw *EventOpject[T]) SetThenSendSignal(value T) {
 	mw.Obj = value
 	mw.Unlock()
 	mw.SendSignal()
-	return
 }
 
 func (mw *EventOpject[T]) SendSignal() {
@@ -49,27 +48,31 @@ func (mw *EventOpject[T]) SendSignal() {
 	mw.broacast.Broadcast()
 }
 
-func (mw *EventOpject[T]) SendBroacast() {
-	mw.Broadcast()
-	mw.broacast.Broadcast()
+// SendBroacast sends a broadcast signal to all goroutines waiting on the Cond or broacast.Cond.
+// If not_included_common_brocast is not empty and its first element is true,
+// only the broacast.Cond is notified. Otherwise, both the Cond and broacast.Cond are notified.
+func (mw *EventOpject[T]) SendBroacast(not_included_common_brocast ...bool) {
+	mw.Broadcast() // Notify all goroutines waiting on the Cond.
+	if len(not_included_common_brocast) == 0 || !not_included_common_brocast[0] {
+		mw.broacast.Broadcast()
+	}
 }
 
 func (mw *EventOpject[T]) SendBroacastOnly() {
 	mw.broacast.Broadcast()
 }
 
-func (mw *EventOpject[T]) WaitBroacast(value T) {
+func (mw *EventOpject[T]) WaitBroacast(value ...T) {
 	mw.broacast.L.Lock()
 	mw.broacast.Wait()
 	mw.broacast.L.Unlock()
 }
 
-func (mw *EventOpject[T]) SetThenSendBroadcast(value T) {
+func (mw *EventOpject[T]) SetThenSendBroadcast(value T, not_included_common_brocast ...bool) {
 	mw.Lock()
 	mw.Obj = value
 	mw.Unlock()
-	mw.SendBroacast()
-	return
+	mw.SendBroacast(not_included_common_brocast...)
 }
 
 func (mw *EventOpject[T]) EditThenSendSignal(editFunc func(obj T) T) {
@@ -83,15 +86,14 @@ func (mw *EventOpject[T]) EditThenSendSignal(editFunc func(obj T) T) {
 	return
 }
 
-func (mw *EventOpject[T]) EditThenSendBroadcast(editFunc func(obj T) T) {
+func (mw *EventOpject[T]) EditThenSendBroadcast(editFunc func(obj T) T, not_included_common_brocast ...bool) {
 	mw.Lock()
 	if editFunc != nil {
 		newObj := editFunc(mw.Obj)
 		mw.Obj = newObj
 	}
 	mw.Unlock()
-	mw.SendBroacast()
-	return
+	mw.SendBroacast(not_included_common_brocast...)
 }
 
 func (mw *EventOpject[T]) Edit(editFunc func(obj T) T) {
@@ -101,10 +103,9 @@ func (mw *EventOpject[T]) Edit(editFunc func(obj T) T) {
 		newObj := editFunc(mw.Obj)
 		mw.Obj = newObj
 	}
-	return
 }
 
-func (mw *EventOpject[T]) WaitUntil(condFunc func(obj T) bool, retviachan ...bool) chan struct{} {
+func (mw *EventOpject[T]) WaitUntil(condFunc func(obj T) bool, retviachan ...interface{}) chan struct{} {
 	f := func() {
 		mw.Lock()
 		defer mw.Unlock()
@@ -113,11 +114,28 @@ func (mw *EventOpject[T]) WaitUntil(condFunc func(obj T) bool, retviachan ...boo
 		}
 	}
 	c := make(chan struct{}, 1)
-
-	if len(retviachan) != 0 && retviachan[0] {
+	timeout := time.Second
+	viachanel := false
+	if len(retviachan) != 0 {
+		switch rv := retviachan[0].(type) {
+		case time.Duration:
+			timeout = rv
+			viachanel = true
+		case bool:
+			viachanel = rv
+		}
+	}
+	if viachanel {
 		go func() {
-			f() //may be leak goroutine beause
-			c <- struct{}{}
+			f()
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				return
+			case c <- struct{}{}:
+				return
+			}
 		}()
 	} else {
 		f()
@@ -125,17 +143,35 @@ func (mw *EventOpject[T]) WaitUntil(condFunc func(obj T) bool, retviachan ...boo
 	return c
 }
 
-func (mw *EventOpject[T]) WaitSignal(retviachan ...bool) chan struct{} {
+func (mw *EventOpject[T]) WaitSignal(retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
 		mw.Wait()
 		mw.Unlock()
 	}
-	if len(retviachan) != 0 && retviachan[0] {
+	timeout := time.Second
+	viachanel := false
+	if len(retviachan) != 0 {
+		switch rv := retviachan[0].(type) {
+		case time.Duration:
+			timeout = rv
+			viachanel = true
+		case bool:
+			viachanel = rv
+		}
+	}
+	if viachanel {
 		go func() {
 			f()
-			c <- struct{}{}
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				return
+			case c <- struct{}{}:
+				return
+			}
 		}()
 	} else {
 		f()
@@ -143,7 +179,7 @@ func (mw *EventOpject[T]) WaitSignal(retviachan ...bool) chan struct{} {
 	return c
 }
 
-func (mw *EventOpject[T]) WaitSignalThenEdit(editFunc func(obj T) T, retviachan ...bool) chan struct{} {
+func (mw *EventOpject[T]) WaitSignalThenEdit(editFunc func(obj T) T, retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -154,17 +190,43 @@ func (mw *EventOpject[T]) WaitSignalThenEdit(editFunc func(obj T) T, retviachan 
 		}
 		mw.Unlock()
 	}
-	if len(retviachan) != 0 && retviachan[0] {
+	timeout := time.Second
+	viachanel := false
+	if len(retviachan) != 0 {
+		switch rv := retviachan[0].(type) {
+		case time.Duration:
+			timeout = rv
+			viachanel = true
+		case bool:
+			viachanel = rv
+		}
+	}
+	if viachanel {
 		go func() {
 			f()
-			c <- struct{}{}
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				return
+			case c <- struct{}{}:
+				return
+			}
 		}()
 	} else {
 		f()
 	}
 	return c
 }
-func (mw *EventOpject[T]) TestThenWaitSignalIfNotMatch(compareValue T, retviachan ...bool) chan struct{} {
+
+// TestThenWaitSignalIfNotMatch waits for the event object to be unlocked
+// and checks if the object's value is not equal to the compareValue. If the
+// condition is met, the function waits for the event object to be signaled.
+// If the retviachan argument is provided and true, the function returns a
+// channel that receives a value after the event object is unlocked and the
+// condition is met. The function also accepts a time.Duration value to set a
+// timeout for the wait operation.
+func (mw *EventOpject[T]) TestThenWaitSignalIfNotMatch(compareValue T, retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -173,10 +235,28 @@ func (mw *EventOpject[T]) TestThenWaitSignalIfNotMatch(compareValue T, retviacha
 		}
 		mw.Unlock()
 	}
-	if len(retviachan) != 0 && retviachan[0] {
+	timeout := time.Second
+	viachanel := false
+	if len(retviachan) != 0 {
+		switch rv := retviachan[0].(type) {
+		case time.Duration:
+			timeout = rv
+			viachanel = true
+		case bool:
+			viachanel = rv
+		}
+	}
+	if viachanel {
 		go func() {
 			f()
-			c <- struct{}{}
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				return
+			case c <- struct{}{}:
+				return
+			}
 		}()
 	} else {
 		f()
@@ -184,7 +264,7 @@ func (mw *EventOpject[T]) TestThenWaitSignalIfNotMatch(compareValue T, retviacha
 	return c
 }
 
-func (mw *EventOpject[T]) TestThenWaitSignalIfMatch(compareValue T, retviachan ...bool) chan struct{} {
+func (mw *EventOpject[T]) TestThenWaitSignalIfMatch(compareValue T, retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -193,10 +273,28 @@ func (mw *EventOpject[T]) TestThenWaitSignalIfMatch(compareValue T, retviachan .
 		}
 		mw.Unlock()
 	}
-	if len(retviachan) != 0 && retviachan[0] {
+	timeout := time.Second
+	viachanel := false
+	if len(retviachan) != 0 {
+		switch rv := retviachan[0].(type) {
+		case time.Duration:
+			timeout = rv
+			viachanel = true
+		case bool:
+			viachanel = rv
+		}
+	}
+	if viachanel {
 		go func() {
 			f()
-			c <- struct{}{}
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				return
+			case c <- struct{}{}:
+				return
+			}
 		}()
 	} else {
 		f()
@@ -219,7 +317,7 @@ func (mw *EventOpject[T]) TestThenEditIfMatch(testFunc func(obj T) bool, editFun
 	return
 }
 
-func (mw *EventOpject[T]) WaitWhile(condFunc func(obj T) bool, retviachan ...bool) chan struct{} {
+func (mw *EventOpject[T]) WaitWhile(condFunc func(obj T) bool, retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -228,10 +326,28 @@ func (mw *EventOpject[T]) WaitWhile(condFunc func(obj T) bool, retviachan ...boo
 			mw.Wait()
 		}
 	}
-	if len(retviachan) != 0 && retviachan[0] {
+	timeout := time.Second
+	viachanel := false
+	if len(retviachan) != 0 {
+		switch rv := retviachan[0].(type) {
+		case time.Duration:
+			timeout = rv
+			viachanel = true
+		case bool:
+			viachanel = rv
+		}
+	}
+	if viachanel {
 		go func() {
 			f()
-			c <- struct{}{}
+			timer := time.NewTimer(timeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				return
+			case c <- struct{}{}:
+				return
+			}
 		}()
 	} else {
 		f()
