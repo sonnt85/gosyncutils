@@ -81,6 +81,10 @@ err := gosyncutils.WaitFor(ctx, 100*time.Millisecond, 5*time.Second, func() bool
 - `WaitUntil(ctx, interval, timeout, condition func() bool) error`
 - `WaitWhile(ctx, interval, timeout, condition func() bool) error`
 
+## Author
+
+**sonnt85** — [thanhson.rf@gmail.com](mailto:thanhson.rf@gmail.com)
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
