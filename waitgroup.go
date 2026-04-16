@@ -2,12 +2,12 @@ package gosyncutils
 
 // SafeWaitGroup must not be copied after first use.
 type SafeWaitGroup struct {
-	*EventOpject[int]
+	*EventObject[int]
 }
 
 func NewSafeWaitGroup() *SafeWaitGroup {
 	return &SafeWaitGroup{
-		EventOpject: NewEventOpject[int](),
+		EventObject: NewEventObject[int](),
 	}
 }
 

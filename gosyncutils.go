@@ -6,16 +6,16 @@ import (
 	"time"
 )
 
-type EventOpject[T any] struct {
+type EventObject[T any] struct {
 	Obj T
 	*sync.Mutex
 	*sync.Cond
 	broacast *sync.Cond
 }
 
-func NewEventOpject[T any]() *EventOpject[T] {
+func NewEventObject[T any]() *EventObject[T] {
 	var obj T
-	mw := EventOpject[T]{
+	mw := EventObject[T]{
 		Obj: obj,
 	}
 	mw.Mutex = new(sync.Mutex)
@@ -24,58 +24,75 @@ func NewEventOpject[T any]() *EventOpject[T] {
 	return &mw
 }
 
-func (mw *EventOpject[T]) Get() T {
+func (mw *EventObject[T]) Get() T {
 	mw.Lock()
 	defer mw.Unlock()
 	return mw.Obj
 }
 
-func (mw *EventOpject[T]) Set(value T) {
+func (mw *EventObject[T]) Set(value T) {
 	mw.Lock()
 	defer mw.Unlock()
 	mw.Obj = value
 }
 
-func (mw *EventOpject[T]) SetThenSendSignal(value T) {
+func (mw *EventObject[T]) SetThenSendSignal(value T) {
 	mw.Lock()
 	mw.Obj = value
 	mw.Unlock()
 	mw.SendSignal()
 }
 
-func (mw *EventOpject[T]) SendSignal() {
+func (mw *EventObject[T]) SendSignal() {
 	mw.Signal()
 	mw.broacast.Broadcast()
 }
 
-// SendBroacast sends a broadcast signal to all goroutines waiting on the Cond or broacast.Cond.
-// If not_included_common_brocast is not empty and its first element is true,
+// SendBroadcast sends a broadcast signal to all goroutines waiting on the Cond or broacast.Cond.
+// If excludeCommonBroadcast is not empty and its first element is true,
 // only the broacast.Cond is notified. Otherwise, both the Cond and broacast.Cond are notified.
-func (mw *EventOpject[T]) SendBroacast(not_included_common_brocast ...bool) {
-	mw.Broadcast() // Notify all goroutines waiting on the Cond.
-	if len(not_included_common_brocast) == 0 || !not_included_common_brocast[0] {
+func (mw *EventObject[T]) SendBroadcast(excludeCommonBroadcast ...bool) {
+	mw.Broadcast()
+	if len(excludeCommonBroadcast) == 0 || !excludeCommonBroadcast[0] {
 		mw.broacast.Broadcast()
 	}
 }
 
-func (mw *EventOpject[T]) SendBroacastOnly() {
+// Deprecated: Use SendBroadcast instead.
+func (mw *EventObject[T]) SendBroacast(excludeCommonBroadcast ...bool) {
+	mw.SendBroadcast(excludeCommonBroadcast...)
+}
+
+// SendBroadcastOnly sends a broadcast signal only to the broacast.Cond.
+func (mw *EventObject[T]) SendBroadcastOnly() {
 	mw.broacast.Broadcast()
 }
 
-func (mw *EventOpject[T]) WaitBroacast(value ...T) {
+// Deprecated: Use SendBroadcastOnly instead.
+func (mw *EventObject[T]) SendBroacastOnly() {
+	mw.SendBroadcastOnly()
+}
+
+// WaitBroadcast blocks until a broadcast signal is received.
+func (mw *EventObject[T]) WaitBroadcast(value ...T) {
 	mw.broacast.L.Lock()
 	mw.broacast.Wait()
 	mw.broacast.L.Unlock()
 }
 
-func (mw *EventOpject[T]) SetThenSendBroadcast(value T, not_included_common_brocast ...bool) {
+// Deprecated: Use WaitBroadcast instead.
+func (mw *EventObject[T]) WaitBroacast(value ...T) {
+	mw.WaitBroadcast(value...)
+}
+
+func (mw *EventObject[T]) SetThenSendBroadcast(value T, excludeCommonBroadcast ...bool) {
 	mw.Lock()
 	mw.Obj = value
 	mw.Unlock()
-	mw.SendBroacast(not_included_common_brocast...)
+	mw.SendBroadcast(excludeCommonBroadcast...)
 }
 
-func (mw *EventOpject[T]) EditThenSendSignal(editFunc func(obj T) T) {
+func (mw *EventObject[T]) EditThenSendSignal(editFunc func(obj T) T) {
 	mw.Lock()
 	if editFunc != nil {
 		newObj := editFunc(mw.Obj)
@@ -86,17 +103,17 @@ func (mw *EventOpject[T]) EditThenSendSignal(editFunc func(obj T) T) {
 	return
 }
 
-func (mw *EventOpject[T]) EditThenSendBroadcast(editFunc func(obj T) T, not_included_common_brocast ...bool) {
+func (mw *EventObject[T]) EditThenSendBroadcast(editFunc func(obj T) T, excludeCommonBroadcast ...bool) {
 	mw.Lock()
 	if editFunc != nil {
 		newObj := editFunc(mw.Obj)
 		mw.Obj = newObj
 	}
 	mw.Unlock()
-	mw.SendBroacast(not_included_common_brocast...)
+	mw.SendBroadcast(excludeCommonBroadcast...)
 }
 
-func (mw *EventOpject[T]) Edit(editFunc func(obj T) T) {
+func (mw *EventObject[T]) Edit(editFunc func(obj T) T) {
 	mw.Lock()
 	defer mw.Unlock()
 	if editFunc != nil {
@@ -105,7 +122,7 @@ func (mw *EventOpject[T]) Edit(editFunc func(obj T) T) {
 	}
 }
 
-func (mw *EventOpject[T]) WaitUntil(condFunc func(obj T) bool, retviachan ...interface{}) chan struct{} {
+func (mw *EventObject[T]) WaitUntil(condFunc func(obj T) bool, retviachan ...interface{}) chan struct{} {
 	f := func() {
 		mw.Lock()
 		defer mw.Unlock()
@@ -143,7 +160,7 @@ func (mw *EventOpject[T]) WaitUntil(condFunc func(obj T) bool, retviachan ...int
 	return c
 }
 
-func (mw *EventOpject[T]) WaitSignal(retviachan ...interface{}) chan struct{} {
+func (mw *EventObject[T]) WaitSignal(retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -179,7 +196,7 @@ func (mw *EventOpject[T]) WaitSignal(retviachan ...interface{}) chan struct{} {
 	return c
 }
 
-func (mw *EventOpject[T]) WaitSignalThenEdit(editFunc func(obj T) T, retviachan ...interface{}) chan struct{} {
+func (mw *EventObject[T]) WaitSignalThenEdit(editFunc func(obj T) T, retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -226,7 +243,7 @@ func (mw *EventOpject[T]) WaitSignalThenEdit(editFunc func(obj T) T, retviachan 
 // channel that receives a value after the event object is unlocked and the
 // condition is met. The function also accepts a time.Duration value to set a
 // timeout for the wait operation.
-func (mw *EventOpject[T]) TestThenWaitSignalIfNotMatch(compareValue T, retviachan ...interface{}) chan struct{} {
+func (mw *EventObject[T]) TestThenWaitSignalIfNotMatch(compareValue T, retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -264,7 +281,7 @@ func (mw *EventOpject[T]) TestThenWaitSignalIfNotMatch(compareValue T, retviacha
 	return c
 }
 
-func (mw *EventOpject[T]) TestThenWaitSignalIfMatch(compareValue T, retviachan ...interface{}) chan struct{} {
+func (mw *EventObject[T]) TestThenWaitSignalIfMatch(compareValue T, retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -302,7 +319,7 @@ func (mw *EventOpject[T]) TestThenWaitSignalIfMatch(compareValue T, retviachan .
 	return c
 }
 
-func (mw *EventOpject[T]) TestThenEditIfMatch(testFunc func(obj T) bool, editFunc func(obj T) T) (b bool) {
+func (mw *EventObject[T]) TestThenEditIfMatch(testFunc func(obj T) bool, editFunc func(obj T) T) (b bool) {
 	mw.Lock()
 	if testFunc != nil {
 		if testFunc(mw.Obj) {
@@ -317,7 +334,7 @@ func (mw *EventOpject[T]) TestThenEditIfMatch(testFunc func(obj T) bool, editFun
 	return
 }
 
-func (mw *EventOpject[T]) WaitWhile(condFunc func(obj T) bool, retviachan ...interface{}) chan struct{} {
+func (mw *EventObject[T]) WaitWhile(condFunc func(obj T) bool, retviachan ...interface{}) chan struct{} {
 	c := make(chan struct{}, 1)
 	f := func() {
 		mw.Lock()
@@ -353,4 +370,9 @@ func (mw *EventOpject[T]) WaitWhile(condFunc func(obj T) bool, retviachan ...int
 		f()
 	}
 	return c
+}
+
+// Deprecated: Use NewEventObject instead.
+func NewEventOpject[T any]() *EventObject[T] {
+	return NewEventObject[T]()
 }

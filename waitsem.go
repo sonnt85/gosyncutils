@@ -6,11 +6,11 @@ import (
 
 // SemWait must not be copied after first use.
 type SemWait struct {
-	eov *EventOpject[int]
+	eov *EventObject[int]
 }
 
 func NewSemWait() *SemWait {
-	obj := NewEventOpject[int]()
+	obj := NewEventObject[int]()
 	return &SemWait{
 		eov: obj,
 	}
