@@ -1,5 +1,7 @@
 # gosyncutils
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/sonnt85/gosyncutils.svg)](https://pkg.go.dev/github.com/sonnt85/gosyncutils)
+
 Synchronization utilities for Go — generic event objects, safe wait groups, semaphores, and polling helpers built on top of `sync.Cond`.
 
 ## Installation
