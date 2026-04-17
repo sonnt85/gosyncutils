@@ -1,7 +1,6 @@
 package gosyncutils
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -20,6 +19,6 @@ func TestWaitgroup(t *testing.T) {
 		}()
 	}
 	time.Sleep(time.Millisecond * 10)
-	fmt.Print("waiting..\n")
+	t.Log("waiting..")
 	wg.Wait()
 }
